@@ -1,0 +1,19 @@
+{
+  "name": "smartplay-badminton-booker",
+  "version": "0.1.0",
+  "description": "SmartPLAY badminton vacancy monitor and assisted auto-booking",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "lint": "echo 'No linter configured yet'"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "playwright": "^1.54.2"
+  }
+}
