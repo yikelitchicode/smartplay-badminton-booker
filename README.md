@@ -50,6 +50,14 @@ public/
    # Fill SMARTPLAY_USERNAME / SMARTPLAY_PASSWORD
    ```
 
+   Recommended for first-time login/captcha handling:
+
+   ```bash
+   HEADLESS=false
+   LOGIN_ENHANCED_MODE=true
+   MANUAL_LOGIN_TIMEOUT_SEC=180
+   ```
+
 3. Run
 
    ```bash
@@ -102,6 +110,8 @@ Performs assisted booking flow. By default, booking is blocked unless `AUTO_BOOK
 Creates a post-login screenshot for selector tuning/debugging. Requires `DEBUG_TOOLS_ENABLED=true`.
 
 ## v0.2 updates
+
+- Added **enhanced login mode** with session persistence (`SESSION_STATE_PATH`) and manual captcha/OTP window (`MANUAL_LOGIN_TIMEOUT_SEC`) when running `HEADLESS=false`.
 
 - Added selector mapping file: `src/config/selectors.tc.json`
 - Added screenshot artifacts on failure (`artifacts/`)

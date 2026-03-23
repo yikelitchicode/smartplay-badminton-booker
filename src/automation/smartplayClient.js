@@ -13,6 +13,15 @@ async function loadSelectorConfig(customPath) {
   return JSON.parse(raw);
 }
 
+async function fileExists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class SmartplayClient {
   constructor(opts = {}) {
     this.opts = opts;
@@ -25,11 +34,19 @@ export class SmartplayClient {
   async init() {
     this.selectors = await loadSelectorConfig(this.opts.selectorConfigPath);
     this.browser = await chromium.launch({ headless: this.opts.headless ?? true });
-    this.context = await this.browser.newContext({
+
+    const contextOptions = {
       locale: 'zh-HK',
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-    });
+    };
+
+    const sessionStatePath = this.opts.sessionStatePath;
+    if (sessionStatePath && (await fileExists(sessionStatePath))) {
+      contextOptions.storageState = sessionStatePath;
+    }
+
+    this.context = await this.browser.newContext(contextOptions);
     this.page = await this.context.newPage();
   }
 
@@ -61,10 +78,26 @@ export class SmartplayClient {
     return file;
   }
 
+  async _isLoggedIn() {
+    const hint = await this._findFirstVisible(this.selectors.login.loggedInHints, 1200);
+    return Boolean(hint);
+  }
+
+  async _saveSessionState() {
+    const sessionStatePath = this.opts.sessionStatePath;
+    if (!sessionStatePath || !this.context) return;
+    await fs.mkdir(path.dirname(sessionStatePath), { recursive: true });
+    await this.context.storageState({ path: sessionStatePath });
+  }
+
   async login() {
     if (!this.page) throw new Error('Client not initialized');
 
     await this.page.goto(`${BASE_URL}/home?lang=tc`, { waitUntil: 'domcontentloaded' });
+
+    // Reused session is still valid.
+    if (await this._isLoggedIn()) return;
+
     await this._clickIfFound(this.selectors.login.entryButtons);
 
     const username = this.opts.username ?? '';
@@ -89,12 +122,33 @@ export class SmartplayClient {
       throw new Error(`Login submit button not found. Screenshot: ${shot}`);
     }
 
-    await this.page.waitForTimeout(3000);
-    const hint = await this._findFirstVisible(this.selectors.login.loggedInHints, 2000);
-    if (!hint) {
-      const shot = await this._snapshot('login-not-confirmed');
-      throw new Error(`Login may require captcha/OTP/manual confirmation. Screenshot: ${shot}`);
+    await this.page.waitForTimeout(2500);
+    if (await this._isLoggedIn()) {
+      await this._saveSessionState();
+      return;
     }
+
+    // Enhanced mode: allow manual captcha/OTP completion window.
+    const enhanced = this.opts.enhancedLoginMode === true;
+    const manualTimeoutSec = Number(this.opts.manualLoginTimeoutSec || 180);
+    if (enhanced && !this.opts.headless) {
+      const started = Date.now();
+      while (Date.now() - started < manualTimeoutSec * 1000) {
+        if (await this._isLoggedIn()) {
+          await this._saveSessionState();
+          return;
+        }
+        await this.page.waitForTimeout(2000);
+      }
+
+      const shot = await this._snapshot('login-manual-timeout');
+      throw new Error(`Manual captcha/OTP window timed out (${manualTimeoutSec}s). Screenshot: ${shot}`);
+    }
+
+    const shot = await this._snapshot('login-not-confirmed');
+    throw new Error(
+      `Login may require captcha/OTP/manual confirmation. Use HEADLESS=false + LOGIN_ENHANCED_MODE=true. Screenshot: ${shot}`
+    );
   }
 
   async getBadmintonAvailability(query) {
