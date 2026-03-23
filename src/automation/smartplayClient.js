@@ -1,33 +1,71 @@
 import { chromium } from 'playwright';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const BASE_URL = 'https://www.smartplay.lcsd.gov.hk';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function loadSelectorConfig(customPath) {
+  const p = customPath || path.resolve(__dirname, '..', 'config', 'selectors.tc.json');
+  const raw = await fs.readFile(p, 'utf8');
+  return JSON.parse(raw);
+}
 
 export class SmartplayClient {
   constructor(opts = {}) {
     this.opts = opts;
     this.browser = null;
     this.page = null;
+    this.context = null;
+    this.selectors = null;
   }
 
   async init() {
+    this.selectors = await loadSelectorConfig(this.opts.selectorConfigPath);
     this.browser = await chromium.launch({ headless: this.opts.headless ?? true });
-    const context = await this.browser.newContext({
+    this.context = await this.browser.newContext({
       locale: 'zh-HK',
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
     });
-    this.page = await context.newPage();
+    this.page = await this.context.newPage();
+  }
+
+  async _findFirstVisible(candidates, timeout = 1500) {
+    for (const s of candidates || []) {
+      const locator = this.page.locator(s);
+      if (await locator.first().isVisible({ timeout }).catch(() => false)) {
+        return locator.first();
+      }
+    }
+    return null;
+  }
+
+  async _clickIfFound(candidates) {
+    const loc = await this._findFirstVisible(candidates);
+    if (loc) {
+      await loc.click({ timeout: 2000 }).catch(() => {});
+      return true;
+    }
+    return false;
+  }
+
+  async _snapshot(tag) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const dir = path.resolve(__dirname, '..', '..', 'artifacts');
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `${tag}-${stamp}.png`);
+    await this.page.screenshot({ path: file, fullPage: true }).catch(() => {});
+    return file;
   }
 
   async login() {
     if (!this.page) throw new Error('Client not initialized');
 
     await this.page.goto(`${BASE_URL}/home?lang=tc`, { waitUntil: 'domcontentloaded' });
-
-    const loginBtn = this.page.getByRole('button', { name: /登入|log\s*in/i }).first();
-    if (await loginBtn.isVisible().catch(() => false)) {
-      await loginBtn.click();
-    }
+    await this._clickIfFound(this.selectors.login.entryButtons);
 
     const username = this.opts.username ?? '';
     const password = this.opts.password ?? '';
@@ -35,66 +73,90 @@ export class SmartplayClient {
       throw new Error('Missing SMARTPLAY_USERNAME / SMARTPLAY_PASSWORD');
     }
 
-    const userInput = this.page.locator('input[type="text"], input[name*="user" i], input[id*="user" i]').first();
-    const passInput = this.page.locator('input[type="password"], input[name*="pass" i], input[id*="pass" i]').first();
+    const userInput = await this._findFirstVisible(this.selectors.login.username, 2500);
+    const passInput = await this._findFirstVisible(this.selectors.login.password, 2500);
+    if (!userInput || !passInput) {
+      const shot = await this._snapshot('login-form-not-found');
+      throw new Error(`Login fields not found. Screenshot: ${shot}`);
+    }
 
     await userInput.fill(username);
     await passInput.fill(password);
 
-    const submitBtn = this.page.getByRole('button', { name: /登入|登錄|login/i }).first();
-    await submitBtn.click();
+    const didClickSubmit = await this._clickIfFound(this.selectors.login.submitButtons);
+    if (!didClickSubmit) {
+      const shot = await this._snapshot('login-submit-not-found');
+      throw new Error(`Login submit button not found. Screenshot: ${shot}`);
+    }
 
     await this.page.waitForTimeout(3000);
-
-    const loggedInHint = this.page.getByText(/我的帳戶|my account|登出|logout/i).first();
-    if (!(await loggedInHint.isVisible().catch(() => false))) {
-      throw new Error('Login may require captcha/OTP/manual confirmation. Run with HEADLESS=false.');
+    const hint = await this._findFirstVisible(this.selectors.login.loggedInHints, 2000);
+    if (!hint) {
+      const shot = await this._snapshot('login-not-confirmed');
+      throw new Error(`Login may require captcha/OTP/manual confirmation. Screenshot: ${shot}`);
     }
   }
 
   async getBadmintonAvailability(query) {
     if (!this.page) throw new Error('Client not initialized');
+    const cfg = this.selectors.availability;
 
-    await this.page.goto(`${BASE_URL}/facilities?lang=tc`, { waitUntil: 'domcontentloaded' });
+    await this.page.goto(`${BASE_URL}${cfg.facilityPage}`, { waitUntil: 'domcontentloaded' });
 
-    const activitySelect = this.page.locator('select, [role="combobox"]').first();
-    if (await activitySelect.isVisible().catch(() => false)) {
-      await activitySelect.click();
-      const badmintonOption = this.page.getByText(/羽毛球|badminton/i).first();
-      if (await badmintonOption.isVisible().catch(() => false)) await badmintonOption.click();
+    const activitySelect = await this._findFirstVisible(cfg.activityCombobox, 1500);
+    if (activitySelect) {
+      await activitySelect.click().catch(() => {});
+      await this._clickIfFound(cfg.activityOptions);
     }
 
-    const dateInput = this.page.locator('input[type="date"], input[placeholder*="日期"], input[placeholder*="date" i]').first();
-    if (await dateInput.isVisible().catch(() => false)) {
-      await dateInput.fill(query.date);
+    const dateInput = await this._findFirstVisible(cfg.dateInput, 1500);
+    if (dateInput && query.date) {
+      await dateInput.fill(query.date).catch(() => {});
     }
 
-    const searchBtn = this.page.getByRole('button', { name: /搜尋|查詢|search/i }).first();
-    if (await searchBtn.isVisible().catch(() => false)) {
-      await searchBtn.click();
-      await this.page.waitForTimeout(2000);
+    await this._clickIfFound(cfg.searchButtons);
+    await this.page.waitForTimeout(2000);
+
+    let rows = null;
+    for (const sel of cfg.resultRows || []) {
+      const loc = this.page.locator(sel);
+      const count = await loc.count().catch(() => 0);
+      if (count > 0) {
+        rows = loc;
+        break;
+      }
     }
 
-    const rows = this.page.locator('table tbody tr');
+    if (!rows) {
+      const shot = await this._snapshot('availability-rows-not-found');
+      throw new Error(`Result rows not found. Screenshot: ${shot}`);
+    }
+
     const count = await rows.count().catch(() => 0);
+    const availableRe = new RegExp(cfg.availableRegex, 'i');
+    const bookedRe = new RegExp(cfg.bookedRegex, 'i');
     const slots = [];
 
     for (let i = 0; i < count; i++) {
       const row = rows.nth(i);
-      const text = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-      if (!text) continue;
+      const tds = row.locator('td');
+      const tdCount = await tds.count().catch(() => 0);
+      const cell = async (idx) => (idx < tdCount ? (await tds.nth(idx).innerText().catch(() => '')).trim() : '');
+      const rowText = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
 
-      const status = /可供|空|available/i.test(text)
+      if (!rowText) continue;
+
+      const status = availableRe.test(rowText)
         ? 'available'
-        : /已滿|booked|full/i.test(text)
+        : bookedRe.test(rowText)
           ? 'booked'
           : 'unknown';
 
       slots.push({
-        venue: query.venue || '未知場地',
-        court: `場次#${i + 1}`,
-        start: query.startTime || '--:--',
-        end: query.endTime || '--:--',
+        venue: (await cell(0)) || query.venue || '未知場地',
+        court: (await cell(1)) || `場次#${i + 1}`,
+        start: (await cell(2)) || query.startTime || '--:--',
+        end: (await cell(3)) || query.endTime || '--:--',
         status
       });
     }
@@ -104,14 +166,18 @@ export class SmartplayClient {
 
   async bookBadminton(req) {
     if (!this.page) throw new Error('Client not initialized');
-    await this.page.goto(`${BASE_URL}/facilities?lang=tc`, { waitUntil: 'domcontentloaded' });
+    await this.page.goto(`${BASE_URL}${this.selectors.availability.facilityPage}`, { waitUntil: 'domcontentloaded' });
 
     return {
-      status: 'queued-manual-confirmation',
-      detail:
-        'Booking scaffold executed. Complete selector mapping + captcha/OTP/payment confirmations before production use.',
+      status: 'manual-confirmation-required',
+      detail: 'Flow prepared. Final confirm/payment/captcha must be completed with operator approval.',
       request: req
     };
+  }
+
+  async collectDebugSnapshot(tag = 'debug') {
+    if (!this.page) throw new Error('Client not initialized');
+    return this._snapshot(tag);
   }
 
   async close() {

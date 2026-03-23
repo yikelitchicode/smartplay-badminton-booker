@@ -97,6 +97,17 @@ Response body (example):
 
 Performs assisted booking flow. By default, booking is blocked unless `AUTO_BOOK_ENABLED=true`.
 
+### `POST /api/debug/login-snapshot`
+
+Creates a post-login screenshot for selector tuning/debugging. Requires `DEBUG_TOOLS_ENABLED=true`.
+
+## v0.2 updates
+
+- Added selector mapping file: `src/config/selectors.tc.json`
+- Added screenshot artifacts on failure (`artifacts/`)
+- Added debug endpoint: `POST /api/debug/login-snapshot` (guarded by `DEBUG_TOOLS_ENABLED=true`)
+- Added optional selector config override: `SELECTOR_CONFIG_PATH`
+
 ## Limitations / next steps
 
 - SmartPLAY selectors and flow can change; keep locators configurable.

@@ -1,0 +1,45 @@
+{
+  "lang": "tc",
+  "login": {
+    "entryButtons": [
+      "button:has-text('登入')",
+      "button:has-text('Login')",
+      "text=/登入|登錄/i"
+    ],
+    "username": [
+      "input[name*='user' i]",
+      "input[id*='user' i]",
+      "input[type='text']"
+    ],
+    "password": [
+      "input[name*='pass' i]",
+      "input[id*='pass' i]",
+      "input[type='password']"
+    ],
+    "submitButtons": [
+      "button:has-text('登入')",
+      "button:has-text('Login')"
+    ],
+    "loggedInHints": [
+      "text=/我的帳戶|my account|登出|logout/i",
+      "a:has-text('登出')"
+    ]
+  },
+  "availability": {
+    "facilityPage": "/facilities?lang=tc",
+    "activityCombobox": ["select", "[role='combobox']"],
+    "activityOptions": ["text=/羽毛球|badminton/i"],
+    "dateInput": [
+      "input[type='date']",
+      "input[placeholder*='日期']",
+      "input[placeholder*='date' i]"
+    ],
+    "searchButtons": [
+      "button:has-text('搜尋')",
+      "button:has-text('Search')"
+    ],
+    "resultRows": ["table tbody tr", ".result-table tbody tr"],
+    "availableRegex": "可供|空|available",
+    "bookedRegex": "已滿|booked|full"
+  }
+}

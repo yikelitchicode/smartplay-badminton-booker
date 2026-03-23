@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fetchAvailability, submitBooking } from '../services/availabilityService.js';
+import { debugLoginSnapshot, fetchAvailability, submitBooking } from '../services/availabilityService.js';
 
 export const apiRouter = Router();
 
@@ -25,6 +25,19 @@ apiRouter.post('/book', async (req, res) => {
   try {
     const result = await submitBooking(req.body || {});
     return res.json({ ok: true, result });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+apiRouter.post('/debug/login-snapshot', async (_req, res) => {
+  if (process.env.DEBUG_TOOLS_ENABLED !== 'true') {
+    return res.status(403).json({ ok: false, error: 'DEBUG_TOOLS_ENABLED is false' });
+  }
+
+  try {
+    const result = await debugLoginSnapshot();
+    return res.json({ ok: true, ...result });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message || String(err) });
   }
