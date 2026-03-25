@@ -1,10 +1,21 @@
 import { SmartplayClient } from '../automation/smartplayClient.js';
+import { ValidationError } from '../utils/errors.js';
+import { validateAvailabilityQuery } from '../utils/validation.js';
 
 function buildClient() {
+  const username = process.env.SMARTPLAY_USERNAME;
+  const password = process.env.SMARTPLAY_PASSWORD;
+  if (!username || !password) {
+    throw new ValidationError('Smartplay credentials are missing', [
+      !username ? 'SMARTPLAY_USERNAME is required' : null,
+      !password ? 'SMARTPLAY_PASSWORD is required' : null
+    ].filter(Boolean));
+  }
+
   return new SmartplayClient({
     headless: process.env.HEADLESS !== 'false',
-    username: process.env.SMARTPLAY_USERNAME,
-    password: process.env.SMARTPLAY_PASSWORD,
+    username,
+    password,
     selectorConfigPath: process.env.SELECTOR_CONFIG_PATH || undefined,
     enhancedLoginMode: process.env.LOGIN_ENHANCED_MODE !== 'false',
     sessionStatePath: process.env.SESSION_STATE_PATH || '.session/smartplay-state.json',
@@ -13,6 +24,7 @@ function buildClient() {
 }
 
 export async function fetchAvailability(query) {
+  validateAvailabilityQuery(query);
   const client = buildClient();
 
   try {
@@ -27,7 +39,7 @@ export async function fetchAvailability(query) {
 
 export async function submitBooking(requestBody) {
   if (process.env.AUTO_BOOK_ENABLED !== 'true') {
-    throw new Error('AUTO_BOOK_ENABLED is false. Booking endpoint is disabled.');
+    throw new ValidationError('Booking endpoint is disabled', ['AUTO_BOOK_ENABLED must be true']);
   }
 
   const client = buildClient();

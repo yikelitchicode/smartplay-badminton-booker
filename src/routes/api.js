@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { debugLoginSnapshot, fetchAvailability, submitBooking } from '../services/availabilityService.js';
+import { ValidationError, toErrorMessage } from '../utils/errors.js';
 
 export const apiRouter = Router();
 
@@ -17,7 +18,8 @@ apiRouter.post('/availability', async (req, res) => {
     const slots = await fetchAvailability({ date, district, venue, activity, startTime, endTime });
     return res.json({ ok: true, query: { date, district, venue, activity, startTime, endTime }, slots });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message || String(err) });
+    const status = err instanceof ValidationError ? 400 : 500;
+    return res.status(status).json({ ok: false, error: toErrorMessage(err), details: err.details });
   }
 });
 
@@ -26,7 +28,8 @@ apiRouter.post('/book', async (req, res) => {
     const result = await submitBooking(req.body || {});
     return res.json({ ok: true, result });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message || String(err) });
+    const status = err instanceof ValidationError ? 400 : 500;
+    return res.status(status).json({ ok: false, error: toErrorMessage(err), details: err.details });
   }
 });
 
