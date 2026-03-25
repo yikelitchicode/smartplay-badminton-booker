@@ -24,3 +24,8 @@ ok('rejects missing date', () => {
 ok('rejects invalid time range', () => {
   assert.throws(() => validateAvailabilityQuery({ date: '2026-03-25', startTime: '10:00', endTime: '09:00' }), /earlier than endTime/);
 });
+
+ok('supports manual-confirmation-required slot status in model docs', async () => {
+  const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../src/types/models.js', import.meta.url), 'utf8'));
+  assert.match(source, /manual-confirmation-required/);
+});

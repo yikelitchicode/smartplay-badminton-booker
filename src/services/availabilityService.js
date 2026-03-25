@@ -31,7 +31,7 @@ export async function fetchAvailability(query) {
     await client.init();
     await client.login();
     const slots = await client.getBadmintonAvailability(query);
-    return slots.filter((x) => x.status === 'available' || x.status === 'unknown');
+    return slots.filter((x) => x.status === 'available' || x.status === 'unknown' || x.status === 'manual-confirmation-required');
   } finally {
     await client.close();
   }
