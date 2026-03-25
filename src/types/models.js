@@ -14,5 +14,5 @@
  * @property {string} court
  * @property {string} start
  * @property {string} end
- * @property {'available' | 'booked' | 'unknown'} status
+ * @property {'available' | 'booked' | 'unknown' | 'manual-confirmation-required'} status
  */

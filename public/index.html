@@ -1,95 +1,105 @@
 <!doctype html>
-<html lang="zh-HK">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SmartPLAY 羽毛球空場查詢</title>
-    <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 24px; }
-      form { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; max-width: 920px; }
-      input, button { padding: 10px; font-size: 14px; }
-      button { cursor: pointer; }
-      table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-      th { background: #f5f5f5; }
-      .ok { color: #0a7f2e; font-weight: 600; }
-      .muted { color: #666; }
-      .error { color: #a31313; white-space: pre-wrap; }
-    </style>
-  </head>
-  <body>
-    <h2>SmartPLAY 羽毛球空場查詢（MVP）</h2>
-    <p class="muted">輸入日期與時段，查詢可用場次（目前為可擴充骨架，需按實際 DOM selector 微調）。</p>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smartplay Badminton Booker</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; line-height: 1.5; color: #111; }
+    .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 12px; }
+    label { display: grid; gap: 6px; font-size: 14px; }
+    input, button { font: inherit; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; }
+    button { cursor: pointer; background: #111; color: white; border-color: #111; }
+    button.secondary { background: white; color: #111; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; }
+    .status { font-weight: 700; }
+    .status.available { color: #0a7a2f; }
+    .status.booked { color: #b42318; }
+    .status.unknown, .status.manual-confirmation-required { color: #7a5d00; }
+    .error { color: #b42318; }
+    .ok { color: #0a7a2f; }
+  </style>
+</head>
+<body>
+  <h1>Smartplay Badminton Booker</h1>
+  <p>查詢場地可用性、顯示每個 slot 的 status，並把 API 錯誤直接顯示出來。</p>
 
-    <form id="qform">
-      <label>日期 <input type="date" id="date" required /></label>
-      <label>地區 <input type="text" id="district" placeholder="例如：灣仔區" /></label>
-      <label>場地 <input type="text" id="venue" placeholder="例如：伊利沙伯體育館" /></label>
-      <label>開始時間 <input type="time" id="startTime" value="18:00" /></label>
-      <label>結束時間 <input type="time" id="endTime" value="22:00" /></label>
-      <div style="display:flex;align-items:end;"><button type="submit">查詢空場</button></div>
-    </form>
+  <form id="query-form">
+    <div class="row">
+      <label>Date<input id="date" type="date" required /></label>
+      <label>District<input id="district" type="text" placeholder="e.g. Kowloon" /></label>
+      <label>Venue<input id="venue" type="text" placeholder="e.g. Leisure Centre" /></label>
+      <label>Activity<input id="activity" type="text" value="badminton" /></label>
+      <label>Start Time<input id="startTime" type="time" /></label>
+      <label>End Time<input id="endTime" type="time" /></label>
+    </div>
+    <div class="row">
+      <button type="submit">Check availability</button>
+      <button type="button" class="secondary" id="clear-btn">Clear</button>
+    </div>
+  </form>
 
-    <div id="status" class="muted" style="margin-top:12px;"></div>
-    <div id="error" class="error"></div>
+  <div id="message"></div>
+  <h2>Result</h2>
+  <div id="result">No query yet.</div>
 
-    <table id="result" hidden>
-      <thead>
-        <tr><th>場地</th><th>場</th><th>開始</th><th>結束</th><th>狀態</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+  <script>
+    const form = document.getElementById('query-form');
+    const message = document.getElementById('message');
+    const result = document.getElementById('result');
+    const clearBtn = document.getElementById('clear-btn');
 
-    <script>
-      const form = document.getElementById('qform');
-      const statusEl = document.getElementById('status');
-      const errEl = document.getElementById('error');
-      const table = document.getElementById('result');
-      const tbody = table.querySelector('tbody');
+    function setMessage(text, kind = '') {
+      message.className = kind;
+      message.textContent = text || '';
+    }
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        errEl.textContent = '';
-        table.hidden = true;
-        tbody.innerHTML = '';
-        statusEl.textContent = '查詢中，請稍候...';
+    function renderSlots(slots) {
+      if (!slots || !slots.length) return '<p>No slots returned.</p>';
+      return '<ul>' + slots.map(slot => {
+        const status = slot.status || 'unknown';
+        return `<li><span class="status ${status}">${status}</span> — ${slot.venue || ''} ${slot.court || ''} ${slot.start || ''}-${slot.end || ''}</li>`;
+      }).join('') + '</ul>';
+    }
 
-        const payload = {
-          date: document.getElementById('date').value,
-          district: document.getElementById('district').value || undefined,
-          venue: document.getElementById('venue').value || undefined,
-          activity: 'badminton',
-          startTime: document.getElementById('startTime').value || undefined,
-          endTime: document.getElementById('endTime').value || undefined
-        };
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setMessage('Loading...', '');
+      result.innerHTML = '';
 
-        try {
-          const resp = await fetch('/api/availability', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await resp.json();
-          if (!resp.ok || !data.ok) throw new Error(data.error || 'Unknown error');
+      const payload = {
+        date: document.getElementById('date').value,
+        district: document.getElementById('district').value.trim() || undefined,
+        venue: document.getElementById('venue').value.trim() || undefined,
+        activity: document.getElementById('activity').value.trim() || 'badminton',
+        startTime: document.getElementById('startTime').value || undefined,
+        endTime: document.getElementById('endTime').value || undefined
+      };
 
-          const slots = data.slots || [];
-          if (!slots.length) {
-            statusEl.textContent = '暫時未找到空場（或 selector 尚未對齊實站）。';
-            return;
-          }
-
-          for (const s of slots) {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${s.venue}</td><td>${s.court}</td><td>${s.start}</td><td>${s.end}</td><td class="ok">${s.status}</td>`;
-            tbody.appendChild(tr);
-          }
-          table.hidden = false;
-          statusEl.textContent = `找到 ${slots.length} 筆記錄`;
-        } catch (err) {
-          statusEl.textContent = '';
-          errEl.textContent = String(err?.message || err);
+      try {
+        const resp = await fetch('/api/availability', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.error || `Request failed (${resp.status})`);
         }
-      });
-    </script>
-  </body>
+        setMessage(`Loaded ${data.slots?.length || 0} slots`, 'ok');
+        result.innerHTML = `<pre>${renderSlots(data.slots)}</pre>`;
+      } catch (err) {
+        setMessage(err.message || String(err), 'error');
+        result.innerHTML = '<p class="error">Failed to load availability.</p>';
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      form.reset();
+      document.getElementById('activity').value = 'badminton';
+      setMessage('');
+      result.textContent = 'No query yet.';
+    });
+  </script>
+</body>
 </html>
